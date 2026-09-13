@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Canary
+Exec=/opt/Canary/canary %U
+Terminal=false
+Type=Application
+Icon=canary
+StartupWMClass=Canary
+Comment=Desktop application for Canary CMS
+Categories=Office;
+MimeType=x-scheme-handler/canary;
+StartupNotify=true

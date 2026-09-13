@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Canary setup</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1220;
+        --ink: #e8eef8;
+        --muted: #93a0b8;
+        --accent: #5b8def;
+        --line: rgba(255, 255, 255, 0.1);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background:
+          radial-gradient(circle at 15% 15%, rgba(91, 141, 239, 0.16), transparent 34%),
+          var(--bg);
+        color: var(--ink);
+        padding: 24px;
+      }
+      .card {
+        width: min(600px, 100%);
+        padding: 28px;
+        border-radius: 20px;
+        background: rgba(15, 23, 42, 0.78);
+        border: 1px solid var(--line);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        letter-spacing: -0.03em;
+      }
+      p, li, label { color: var(--muted); line-height: 1.55; }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.86em;
+        color: #dbe7ff;
+      }
+      .field { margin-top: 16px; }
+      .field label {
+        display: block;
+        font-size: 0.82rem;
+        margin-bottom: 6px;
+        color: #b7c3d9;
+      }
+      input, select {
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: rgba(0, 0, 0, 0.25);
+        color: var(--ink);
+        padding: 11px 12px;
+        font: inherit;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 22px;
+      }
+      button {
+        border: 0;
+        border-radius: 12px;
+        padding: 11px 16px;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .primary {
+        background: linear-gradient(135deg, #5b8def, #3b6fd4);
+        color: white;
+      }
+      .ghost {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--ink);
+        border: 1px solid var(--line);
+      }
+      #meta {
+        margin-top: 18px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        font-size: 0.86rem;
+      }
+      #lead { margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Canary isn’t reachable</h1>
+      <p id="lead">
+        Choose a server URL, or start a local Docker stack, then try again.
+      </p>
+
+      <div class="field">
+        <label for="recent">Recent servers</label>
+        <select id="recent"></select>
+      </div>
+      <div class="field">
+        <label for="url">Server URL</label>
+        <input id="url" type="url" placeholder="http://127.0.0.1:8080" spellcheck="false" />
+      </div>
+      <div class="field">
+        <label for="composeDir">Compose project directory (optional)</label>
+        <div style="display:flex; gap:8px;">
+          <input id="composeDir" type="text" placeholder="/opt/canarycms" spellcheck="false" style="flex:1;" />
+          <button class="ghost" id="browseCompose" type="button">Browse…</button>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="primary" id="retry" type="button">Save &amp; try again</button>
+        <button class="ghost" id="settings" type="button">All settings…</button>
+        <button class="ghost" id="openBrowser" type="button">Open URL in browser</button>
+      </div>
+      <div id="meta"></div>
+    </div>
+    <script>
+      let boot = null
+
+      function fillRecent(cfg) {
+        const sel = document.getElementById('recent')
+        sel.innerHTML = ''
+        const urls = cfg.recentUrls?.length ? cfg.recentUrls : [cfg.url]
+        for (const u of urls) {
+          const opt = document.createElement('option')
+          opt.value = u
+          opt.textContent = u
+          if (u === cfg.url) opt.selected = true
+          sel.appendChild(opt)
+        }
+      }
+
+      async function init() {
+        boot = await window.canaryDesktop.getBootstrap()
+        document.getElementById('url').value = boot.url
+        document.getElementById('composeDir').value = boot.composeDir || ''
+        fillRecent(boot)
+        document.getElementById('meta').innerHTML =
+          `App version <code>${boot.version}</code><br/>Config <code>${boot.configPath}</code>` +
+          (boot.composeDir
+            ? `<br/>Auto-start ${boot.autoStart ? 'on' : 'off'} · profile <code>${boot.composeProfile}</code>`
+            : `<br/>No Compose directory set.`)
+
+        document.getElementById('recent').onchange = (e) => {
+          document.getElementById('url').value = e.target.value
+        }
+        document.getElementById('browseCompose').onclick = async () => {
+          const dir = await window.canaryDesktop.pickDirectory()
+          if (dir) document.getElementById('composeDir').value = dir
+        }
+        document.getElementById('retry').onclick = async () => {
+          const serverUrl = document.getElementById('url').value.trim()
+          const composeDir = document.getElementById('composeDir').value.trim()
+          await window.canaryDesktop.saveConfig({ serverUrl, composeDir })
+          await window.canaryDesktop.retry({ serverUrl })
+        }
+        document.getElementById('openBrowser').onclick = () => {
+          const u = document.getElementById('url').value.trim() || boot.url
+          window.canaryDesktop.openExternal(u)
+        }
+        document.getElementById('settings').onclick = async () => {
+          await window.canaryDesktop.saveConfig({
+            serverUrl: document.getElementById('url').value.trim(),
+            composeDir: document.getElementById('composeDir').value.trim(),
+          })
+          await window.canaryDesktop.openSettings()
+        }
+
+        window.canaryDesktop.onStatus((payload) => {
+          if (payload?.message) document.getElementById('lead').textContent = payload.message
+        })
+      }
+      init()
+    </script>
+  </body>
+</html>

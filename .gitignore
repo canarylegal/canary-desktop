@@ -1,0 +1,19 @@
+# Built packages — publish via GitHub Releases, do not commit
+*.deb
+*.rpm
+*.AppImage
+SHA256SUMS
+SHA256SUMS.txt
+
+# Electron / Node
+node_modules/
+dist/
+out/
+*.asar
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

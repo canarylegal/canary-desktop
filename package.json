@@ -1,0 +1,11 @@
+{
+  "name": "canary-desktop",
+  "productName": "Canary",
+  "version": "0.1.5",
+  "description": "Canary CMS desktop application",
+  "author": "Canary Legal Software <support@canarylegalsoftware.co.uk>",
+  "homepage": "https://canarylegalsoftware.co.uk",
+  "license": "UNLICENSED",
+  "main": "src/main.cjs",
+  "private": true
+}

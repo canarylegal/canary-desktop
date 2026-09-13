@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Canary settings</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1220;
+        --ink: #e8eef8;
+        --muted: #93a0b8;
+        --accent: #5b8def;
+        --line: rgba(255, 255, 255, 0.1);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        padding: 24px;
+      }
+      h1 { margin: 0 0 6px; font-size: 1.4rem; letter-spacing: -0.03em; }
+      .sub { color: var(--muted); margin-bottom: 20px; font-size: 0.92rem; }
+      section {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 16px 18px;
+        margin-bottom: 14px;
+        background: rgba(15, 23, 42, 0.55);
+      }
+      h2 { margin: 0 0 12px; font-size: 0.95rem; color: #c9d6ee; }
+      .field { margin-bottom: 12px; }
+      label {
+        display: block;
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-bottom: 5px;
+      }
+      input[type="text"], input[type="url"], input[type="number"], select {
+        width: 100%;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: rgba(0, 0, 0, 0.28);
+        color: var(--ink);
+        padding: 10px 12px;
+        font: inherit;
+      }
+      .row { display: flex; gap: 8px; align-items: center; }
+      .row input { flex: 1; }
+      .check {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin: 8px 0;
+        color: var(--ink);
+        font-size: 0.92rem;
+      }
+      .check input { width: auto; }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 8px;
+        position: sticky;
+        bottom: 0;
+        padding: 12px 0 4px;
+        background: linear-gradient(transparent, var(--bg) 30%);
+      }
+      button {
+        border: 0;
+        border-radius: 12px;
+        padding: 10px 14px;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .primary { background: linear-gradient(135deg, #5b8def, #3b6fd4); color: white; }
+      .ghost {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--ink);
+        border: 1px solid var(--line);
+      }
+      #status { min-height: 1.2em; color: #9ecbff; font-size: 0.88rem; margin-top: 8px; }
+      code { font-size: 0.85em; color: #dbe7ff; }
+    </style>
+  </head>
+  <body>
+    <h1>Canary settings</h1>
+    <p class="sub">Stored in <code id="configPath"></code></p>
+
+    <section>
+      <h2>Server</h2>
+      <div class="field">
+        <label for="serverUrl">Server URL</label>
+        <input id="serverUrl" type="url" spellcheck="false" />
+      </div>
+      <div class="field">
+        <label for="recentUrls">Recent URLs (one per line)</label>
+        <textarea id="recentUrls" rows="4" style="width:100%;border-radius:10px;border:1px solid var(--line);background:rgba(0,0,0,.28);color:var(--ink);padding:10px 12px;font:inherit;"></textarea>
+      </div>
+      <div class="field">
+        <label for="healthPath">Health path</label>
+        <input id="healthPath" type="text" spellcheck="false" />
+      </div>
+      <div class="row">
+        <div class="field" style="flex:1;">
+          <label for="healthTimeoutMs">Health timeout (ms)</label>
+          <input id="healthTimeoutMs" type="number" min="5000" step="1000" />
+        </div>
+        <div class="field" style="flex:1;">
+          <label for="healthIntervalMs">Retry interval (ms)</label>
+          <input id="healthIntervalMs" type="number" min="500" step="100" />
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Local Docker</h2>
+      <div class="field">
+        <label for="composeDir">Compose project directory</label>
+        <div class="row">
+          <input id="composeDir" type="text" spellcheck="false" />
+          <button class="ghost" id="browseCompose" type="button">Browse…</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="composeProfile">Compose profile</label>
+        <input id="composeProfile" type="text" spellcheck="false" />
+      </div>
+      <label class="check"><input id="autoStart" type="checkbox" /> Auto-start Compose when server is offline</label>
+    </section>
+
+    <section>
+      <h2>Desktop behaviour</h2>
+      <div class="field">
+        <label for="externalLinks">External links</label>
+        <select id="externalLinks">
+          <option value="system">System browser</option>
+          <option value="app">In-app window</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="downloadPath">Download folder</label>
+        <div class="row">
+          <input id="downloadPath" type="text" spellcheck="false" placeholder="System default" />
+          <button class="ghost" id="browseDownloads" type="button">Browse…</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="spellcheckLanguages">Spellcheck languages (comma-separated)</label>
+        <input id="spellcheckLanguages" type="text" placeholder="en-GB" />
+      </div>
+      <div class="field">
+        <label for="zoomFactor">Default zoom (0.5–2)</label>
+        <input id="zoomFactor" type="number" min="0.5" max="2" step="0.05" />
+      </div>
+      <label class="check"><input id="trayEnabled" type="checkbox" /> Show tray icon (close hides to tray)</label>
+      <label class="check"><input id="startMinimized" type="checkbox" /> Start minimized</label>
+      <label class="check"><input id="launchAtLogin" type="checkbox" /> Launch at login</label>
+    </section>
+
+    <section>
+      <h2>Updates</h2>
+      <div class="field">
+        <label for="updateChannel">Channel</label>
+        <input id="updateChannel" type="text" placeholder="stable" />
+      </div>
+      <div class="field">
+        <label for="updateCheckUrl">Version check URL (JSON)</label>
+        <input id="updateCheckUrl" type="url" spellcheck="false" />
+      </div>
+    </section>
+
+    <div class="actions">
+      <button class="primary" id="save" type="button">Save</button>
+      <button class="ghost" id="reconnect" type="button">Save &amp; reconnect</button>
+      <button class="ghost" id="checkUpdates" type="button">Check for updates</button>
+      <button class="ghost" id="openLogs" type="button">Open logs</button>
+      <button class="ghost" id="openConfig" type="button">Open config file</button>
+    </div>
+    <div id="status"></div>
+
+    <script>
+      const $ = (id) => document.getElementById(id)
+
+      function apply(cfg) {
+        $('configPath').textContent = cfg.configPath
+        $('serverUrl').value = cfg.serverUrl || cfg.url || ''
+        $('recentUrls').value = (cfg.recentUrls || []).join('\n')
+        $('healthPath').value = cfg.healthPath || '/api/health'
+        $('healthTimeoutMs').value = cfg.healthTimeoutMs
+        $('healthIntervalMs').value = cfg.healthIntervalMs
+        $('composeDir').value = cfg.composeDir || ''
+        $('composeProfile').value = cfg.composeProfile || 'prod'
+        $('autoStart').checked = !!cfg.autoStart
+        $('externalLinks').value = cfg.externalLinks === 'app' ? 'app' : 'system'
+        $('downloadPath').value = cfg.downloadPath || ''
+        $('spellcheckLanguages').value = (cfg.spellcheckLanguages || []).join(', ')
+        $('zoomFactor').value = cfg.zoomFactor ?? 1
+        $('trayEnabled').checked = cfg.trayEnabled !== false
+        $('startMinimized').checked = !!cfg.startMinimized
+        $('launchAtLogin').checked = !!cfg.launchAtLogin
+        $('updateChannel').value = cfg.updateChannel || 'stable'
+        $('updateCheckUrl').value = cfg.updateCheckUrl || ''
+      }
+
+      function collect() {
+        return {
+          serverUrl: $('serverUrl').value.trim(),
+          recentUrls: $('recentUrls').value.split('\n').map((s) => s.trim()).filter(Boolean),
+          healthPath: $('healthPath').value.trim(),
+          healthTimeoutMs: Number($('healthTimeoutMs').value),
+          healthIntervalMs: Number($('healthIntervalMs').value),
+          composeDir: $('composeDir').value.trim(),
+          composeProfile: $('composeProfile').value.trim(),
+          autoStart: $('autoStart').checked,
+          externalLinks: $('externalLinks').value,
+          downloadPath: $('downloadPath').value.trim(),
+          spellcheckLanguages: $('spellcheckLanguages').value.split(',').map((s) => s.trim()).filter(Boolean),
+          zoomFactor: Number($('zoomFactor').value),
+          trayEnabled: $('trayEnabled').checked,
+          startMinimized: $('startMinimized').checked,
+          launchAtLogin: $('launchAtLogin').checked,
+          updateChannel: $('updateChannel').value.trim(),
+          updateCheckUrl: $('updateCheckUrl').value.trim(),
+        }
+      }
+
+      async function init() {
+        apply(await window.canaryDesktop.getConfig())
+        $('browseCompose').onclick = async () => {
+          const dir = await window.canaryDesktop.pickDirectory()
+          if (dir) $('composeDir').value = dir
+        }
+        $('browseDownloads').onclick = async () => {
+          const dir = await window.canaryDesktop.pickDirectory()
+          if (dir) $('downloadPath').value = dir
+        }
+        $('save').onclick = async () => {
+          apply(await window.canaryDesktop.saveConfig(collect()))
+          $('status').textContent = 'Saved. Some options apply on next reconnect or restart.'
+        }
+        $('reconnect').onclick = async () => {
+          const patch = collect()
+          await window.canaryDesktop.saveConfig(patch)
+          await window.canaryDesktop.retry({ serverUrl: patch.serverUrl })
+          $('status').textContent = 'Saved and reconnecting…'
+        }
+        $('checkUpdates').onclick = () => window.canaryDesktop.checkUpdates()
+        $('openLogs').onclick = () => window.canaryDesktop.openPath('logs')
+        $('openConfig').onclick = () => window.canaryDesktop.openPath('config')
+      }
+      init()
+    </script>
+  </body>
+</html>

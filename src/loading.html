@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Starting Canary</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1220;
+        --ink: #e8eef8;
+        --muted: #93a0b8;
+        --accent: #5b8def;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(91, 141, 239, 0.18), transparent 36%),
+          radial-gradient(circle at 80% 10%, rgba(45, 212, 191, 0.12), transparent 30%),
+          var(--bg);
+        color: var(--ink);
+      }
+      .card {
+        width: min(420px, 92vw);
+        padding: 32px 28px;
+        border-radius: 20px;
+        background: rgba(15, 23, 42, 0.72);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+        text-align: center;
+      }
+      .mark {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto 18px;
+        border-radius: 16px;
+        background: linear-gradient(145deg, #5b8def, #2dd4bf);
+        display: grid;
+        place-items: center;
+        font-weight: 800;
+        font-size: 1.5rem;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.35rem;
+        letter-spacing: -0.03em;
+      }
+      p {
+        margin: 10px 0 0;
+        color: var(--muted);
+        line-height: 1.5;
+        font-size: 0.95rem;
+      }
+      .spinner {
+        width: 28px;
+        height: 28px;
+        margin: 22px auto 0;
+        border-radius: 50%;
+        border: 3px solid rgba(255, 255, 255, 0.12);
+        border-top-color: var(--accent);
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      #status { min-height: 1.4em; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="mark">C</div>
+      <h1>Starting Canary</h1>
+      <p id="status">Preparing the desktop window…</p>
+      <div class="spinner" aria-hidden="true"></div>
+    </div>
+    <script>
+      if (window.canaryDesktop) {
+        window.canaryDesktop.onStatus((payload) => {
+          const el = document.getElementById('status')
+          if (el && payload?.message) el.textContent = payload.message
+        })
+      }
+    </script>
+  </body>
+</html>
