@@ -4,16 +4,8 @@
 *.AppImage
 SHA256SUMS
 SHA256SUMS.txt
+electron-base*.deb
 
-# Electron / Node
-node_modules/
-dist/
-out/
-*.asar
-
-# OS / editor
-.DS_Store
-Thumbs.db
-*.swp
-.idea/
-.vscode/
+# Local tooling
+.tools/
+.tools/

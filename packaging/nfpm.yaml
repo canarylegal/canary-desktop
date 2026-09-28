@@ -1,0 +1,52 @@
+# Shared contents — emitted by build-packages.sh into staging trees.
+# Deb:  /opt/Canary/...
+# RPM:  /usr/lib64/canary/... + /usr/bin/canary
+
+name: canary-desktop
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: office
+priority: optional
+maintainer: Canary Legal Software <support@canarylegalsoftware.co.uk>
+description: |
+  Desktop application for Canary CMS. Opens Canary in a native window
+  with tray, autostart, and canary:// deep links.
+vendor: Canary Legal Software
+homepage: https://canarylegalsoftware.co.uk
+license: Proprietary
+# UNLICENSED upstream; RPM License tag uses Proprietary for Fedora tooling.
+
+contents:
+  # Preserve full directory layout under /
+  - src: ${STAGE}
+    dst: /
+    type: tree
+
+scripts:
+  postinstall: ${SCRIPTS}/postinst
+  postremove: ${SCRIPTS}/postrm
+
+overrides:
+  deb:
+    depends:
+      - libgtk-3-0
+      - libnotify4
+      - libnss3
+      - libxss1
+      - libxtst6
+      - xdg-utils
+      - libatspi2.0-0
+      - libuuid1
+    recommends:
+      - libappindicator3-1
+  rpm:
+    depends:
+      - gtk3
+      - libnotify
+      - nss
+      - libXScrnSaver
+      - libXtst
+      - xdg-utils
+      - at-spi2-atk
+      - libuuid
