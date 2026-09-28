@@ -8,4 +8,16 @@ electron-base*.deb
 
 # Local tooling
 .tools/
-.tools/
+
+# Electron / Node
+node_modules/
+dist/
+out/
+*.asar
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
