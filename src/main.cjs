@@ -11,6 +11,7 @@ const {
   nativeTheme,
   nativeImage,
   session,
+  net,
 } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
@@ -25,6 +26,8 @@ const {
   normalizeUrl,
   configPath,
 } = require('./config.cjs')
+const { isCanaryMailProtocol } = require('./mail-protocol.cjs')
+const { openPendingEmlInThunderbird } = require('./open-eml.cjs')
 
 let config = null
 let mainWindow = null
@@ -200,9 +203,26 @@ function applySpellcheck(contents) {
 }
 
 let downloadHandlerBound = false
+let devicePermissionBound = false
 
 function applySessionPrefs() {
   const ses = session.defaultSession
+  if (!devicePermissionBound) {
+    devicePermissionBound = true
+    // USB security keys show up as HID. Allow those for the Canary origin only.
+    try {
+      ses.setDevicePermissionHandler((details) => {
+        if (details.deviceType !== 'hid' && details.deviceType !== 'usb') return false
+        try {
+          return new URL(details.origin).origin === appOrigin()
+        } catch {
+          return false
+        }
+      })
+    } catch (err) {
+      console.warn('canary-desktop: device permission:', err.message)
+    }
+  }
   if (config.downloadPath) {
     try {
       fs.mkdirSync(config.downloadPath, { recursive: true })
@@ -293,6 +313,11 @@ function saveEditorBounds(name, win) {
 
 function attachNavigationGuard(contents) {
   contents.on('will-navigate', (event, url) => {
+    if (isCanaryMailProtocol(url)) {
+      event.preventDefault()
+      void requestEmlOpen(contents)
+      return
+    }
     try {
       const target = new URL(url)
       if (target.origin !== appOrigin() && target.protocol !== 'file:') {
@@ -331,8 +356,376 @@ async function openExternalOrApp(url) {
   await shell.openExternal(url)
 }
 
+let emlOpenTask = null
+let webauthnBusy = false
+
+function pageOrigin(contents) {
+  try {
+    const url = new URL(contents.getURL())
+    if (url.protocol === 'http:' || url.protocol === 'https:') return url.origin
+  } catch {
+    // fall through
+  }
+  return serverUrl()
+}
+
+async function readPageToken(contents) {
+  try {
+    const token = await contents.executeJavaScript(
+      "(() => { try { return localStorage.getItem('token') || '' } catch (e) { return '' } })()",
+      true,
+    )
+    return typeof token === 'string' ? token.trim() : ''
+  } catch {
+    return ''
+  }
+}
+
+async function apiRequest({ url, method, token, binary }) {
+  const headers = { Accept: binary ? '*/*' : 'application/json' }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+    headers['X-Canary-Token'] = token
+  }
+  const response = await net.fetch(url, { method, headers, credentials: 'include' })
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(`${method} ${url} failed (${response.status}) ${text.slice(0, 180)}`.trim())
+  }
+  if (binary) {
+    const buffer = Buffer.from(await response.arrayBuffer())
+    return { buffer }
+  }
+  if (response.status === 204) return { json: null }
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.includes('json')) return { json: null }
+  return { json: await response.json() }
+}
+
+function writeEmlFile(filename, buffer) {
+  const dir = path.join(app.getPath('temp'), 'canary-eml')
+  fs.mkdirSync(dir, { recursive: true })
+  const filePath = path.join(dir, `${Date.now()}-${filename}`)
+  fs.writeFileSync(filePath, buffer, { mode: 0o600 })
+  setTimeout(() => {
+    fs.promises.unlink(filePath).catch(() => {})
+  }, 10 * 60 * 1000)
+  return filePath
+}
+
+function launchThunderbird(filePath) {
+  return new Promise((resolve, reject) => {
+    const bin = '/usr/bin/thunderbird'
+    if (!fs.existsSync(bin)) {
+      reject(new Error('Thunderbird is not installed.'))
+      return
+    }
+    const child = spawn(bin, ['-file', filePath], { detached: true, stdio: 'ignore' })
+    child.once('error', reject)
+    child.unref()
+    resolve()
+  })
+}
+
+function requestEmlOpen(contents) {
+  if (emlOpenTask) return emlOpenTask
+  const task = (async () => {
+    if (!contents || contents.isDestroyed()) return
+    await openPendingEmlInThunderbird({
+      origin: pageOrigin(contents),
+      token: await readPageToken(contents),
+      request: apiRequest,
+      writeFile: async (filename, buffer) => writeEmlFile(filename, buffer),
+      launch: launchThunderbird,
+    })
+  })().catch(async (err) => {
+    console.warn('canary-desktop: open e-mail:', err.message)
+    let parent
+    try {
+      parent = BrowserWindow.fromWebContents(contents)
+    } catch {
+      parent = undefined
+    }
+    await dialog.showMessageBox(parent && !parent.isDestroyed() ? parent : undefined, {
+      type: 'error',
+      title: 'Could not open e-mail',
+      message: 'Canary could not open this message in Thunderbird.',
+      detail: err.message,
+    })
+  })
+  emlOpenTask = task
+  void task.finally(() => {
+    setTimeout(() => {
+      if (emlOpenTask === task) emlOpenTask = null
+    }, 4000)
+  })
+  return task
+}
+
+function yubiHelperPath() {
+  const source = path.join(__dirname, 'yubikey.py')
+  const destDir = path.join(app.getPath('userData'), 'bin')
+  const dest = path.join(destDir, 'yubikey.py')
+  const bytes = fs.readFileSync(source)
+  let current = null
+  try {
+    current = fs.readFileSync(dest)
+  } catch {
+    current = null
+  }
+  if (!current || !current.equals(bytes)) {
+    fs.mkdirSync(destDir, { recursive: true })
+    fs.writeFileSync(dest, bytes, { mode: 0o700 })
+  }
+  return dest
+}
+
+function rpIdFor(origin, requested) {
+  let host = ''
+  try {
+    host = new URL(origin).hostname
+  } catch {
+    host = ''
+  }
+  const rp = typeof requested === 'string' ? requested : ''
+  if (host && rp && (host === rp || host.endsWith(`.${rp}`))) return rp
+  return host
+}
+
+function runYubiHelper(payload, onChild) {
+  return new Promise((resolve) => {
+    let child
+    try {
+      child = spawn('/usr/bin/python3', [yubiHelperPath()], { stdio: ['pipe', 'pipe', 'pipe'] })
+    } catch (err) {
+      resolve({ ok: false, code: 'error', message: err.message })
+      return
+    }
+    if (onChild) onChild(child)
+    let out = ''
+    let err = ''
+    let settled = false
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      resolve(value)
+    }
+    child.stdout.on('data', (chunk) => {
+      out += chunk
+    })
+    child.stderr.on('data', (chunk) => {
+      err += chunk
+    })
+    child.on('error', (error) => {
+      finish({ ok: false, code: 'error', message: error.message })
+    })
+    child.on('close', () => {
+      const line = String(out).trim().split('\n').filter(Boolean).pop()
+      if (!line) {
+        finish({ ok: false, code: 'not-allowed', message: 'The operation was cancelled.' })
+        return
+      }
+      try {
+        finish(JSON.parse(line))
+      } catch {
+        finish({
+          ok: false,
+          code: 'error',
+          message: String(err).trim() || 'The security key helper failed.',
+        })
+      }
+    })
+    child.stdin.end(JSON.stringify(payload))
+  })
+}
+
+function openYubiWindow(parent, { mode, message }) {
+  let settled = false
+  let child = null
+  let dismissKills = true
+  const win = new BrowserWindow({
+    width: 440,
+    height: mode === 'pin' ? 280 : 220,
+    parent: parent && !parent.isDestroyed() ? parent : undefined,
+    modal: Boolean(parent && !parent.isDestroyed()),
+    title: 'Security key',
+    backgroundColor: '#0b1220',
+    autoHideMenuBar: true,
+    minimizable: false,
+    maximizable: false,
+    resizable: false,
+    alwaysOnTop: true,
+    icon: iconPath(),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+  const result = new Promise((resolve) => {
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      ipcMain.removeListener('canary:yubikey-submit', onSubmit)
+      ipcMain.removeListener('canary:yubikey-cancel', onCancel)
+      resolve(value)
+      if (!win.isDestroyed()) win.close()
+    }
+    const onSubmit = (event, pin) => {
+      if (event.sender !== win.webContents) return
+      finish(typeof pin === 'string' ? pin : '')
+    }
+    const onCancel = (event) => {
+      if (event.sender !== win.webContents) return
+      finish(null)
+    }
+    ipcMain.on('canary:yubikey-submit', onSubmit)
+    ipcMain.on('canary:yubikey-cancel', onCancel)
+    win.on('closed', () => {
+      if (dismissKills && child && child.exitCode === null && !child.killed) child.kill()
+      finish(null)
+    })
+  })
+  void win.loadFile(page('yubikey.html'), { query: { mode, message } })
+  focusWindow(win)
+  return {
+    result,
+    setChild(next) {
+      child = next
+    },
+    close() {
+      dismissKills = false
+      if (!win.isDestroyed()) win.close()
+    },
+  }
+}
+
+function mapWebAuthnError(result) {
+  if (result.code === 'excluded') {
+    return {
+      ok: false,
+      name: 'InvalidStateError',
+      message: 'This YubiKey is already registered for this account.',
+    }
+  }
+  if (result.code === 'no-credentials') {
+    return {
+      ok: false,
+      name: 'NotAllowedError',
+      message: 'This YubiKey has no passkey for this site.',
+    }
+  }
+  if (result.code === 'timeout') {
+    return { ok: false, name: 'NotAllowedError', message: 'The YubiKey was not touched in time.' }
+  }
+  if (result.code === 'pin-blocked') {
+    return {
+      ok: false,
+      name: 'NotAllowedError',
+      message: 'The YubiKey PIN is blocked. Use YubiKey Manager to unblock it.',
+    }
+  }
+  if (result.code === 'no-device') {
+    return {
+      ok: false,
+      name: 'NotAllowedError',
+      message: 'No security key was found. Plug in your YubiKey and try again.',
+    }
+  }
+  if (result.code === 'not-allowed') {
+    return { ok: false, name: 'NotAllowedError', message: 'The operation was cancelled.' }
+  }
+  return {
+    ok: false,
+    name: 'NotAllowedError',
+    message: result.message || 'The security key could not complete the request.',
+  }
+}
+
+function pinPrompt(attempt, retries) {
+  if (!attempt) return 'Enter the PIN for your YubiKey. You will then be asked to touch it.'
+  const left = Number.isInteger(retries) ? ` ${retries} tries remaining.` : ''
+  return `That PIN was not accepted.${left}`
+}
+
+async function performWebAuthn(sender, payload) {
+  const origin = pageOrigin(sender)
+  const rpId = rpIdFor(origin, payload && payload.rpId)
+  if (!origin || !rpId || !payload || typeof payload.challenge !== 'string' || payload.challenge.length > 200) {
+    return { ok: false, name: 'NotAllowedError', message: 'This page cannot use a security key.' }
+  }
+  const info = await runYubiHelper({ action: 'info' })
+  if (!info.ok) return mapWebAuthnError(info)
+  const uvMode = payload.userVerification || 'preferred'
+  const wantUv = uvMode !== 'discouraged' && (info.clientPin || info.alwaysUv)
+  const parent = BrowserWindow.fromWebContents(sender)
+  const kind = payload.kind === 'create' ? 'create' : 'get'
+  let retries = null
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    let pin = null
+    if (wantUv || info.alwaysUv) {
+      const pinWindow = openYubiWindow(parent, { mode: 'pin', message: pinPrompt(attempt, retries) })
+      pin = await pinWindow.result
+      if (!pin) return { ok: false, name: 'NotAllowedError', message: 'The operation was cancelled.' }
+    }
+    const touch = openYubiWindow(parent, { mode: 'touch', message: 'Touch your YubiKey now.' })
+    try {
+      const response = await runYubiHelper(
+        {
+          action: kind,
+          origin,
+          rpId,
+          rpName: typeof payload.rpName === 'string' ? payload.rpName : rpId,
+          challenge: payload.challenge,
+          userId: typeof payload.userId === 'string' ? payload.userId : '',
+          userName: typeof payload.userName === 'string' ? payload.userName : '',
+          userDisplayName: typeof payload.userDisplayName === 'string' ? payload.userDisplayName : '',
+          alg: [-7, -8, -35].includes(Number(payload.alg)) ? Number(payload.alg) : -7,
+          resident: Boolean(payload.resident),
+          uv: Boolean(wantUv || info.alwaysUv),
+          pin,
+          allowCredentials: Array.isArray(payload.allowCredentials)
+            ? payload.allowCredentials.filter((item) => typeof item === 'string').slice(0, 64)
+            : [],
+          excludeCredentials: Array.isArray(payload.excludeCredentials)
+            ? payload.excludeCredentials.filter((item) => typeof item === 'string').slice(0, 64)
+            : [],
+        },
+        (child) => {
+          touch.setChild(child)
+        },
+      )
+      if (response.ok) return { ok: true, credential: response.credential }
+      console.error('canary-desktop: security key', response.code || 'error', response.message || '')
+      if (response.code === 'pin-invalid' && attempt < 3) {
+        retries = response.retries
+        continue
+      }
+      return mapWebAuthnError(response)
+    } finally {
+      touch.close()
+    }
+  }
+  return { ok: false, name: 'NotAllowedError', message: 'The YubiKey PIN was not accepted.' }
+}
+
+function registerMailProtocols() {
+  for (const scheme of ['canary', 'canary-eml', 'ext+canary']) {
+    try {
+      app.setAsDefaultProtocolClient(scheme)
+    } catch (err) {
+      console.warn(`canary-desktop: protocol ${scheme}:`, err.message)
+    }
+  }
+}
+
 function attachWindowOpenHandler(contents) {
   contents.setWindowOpenHandler(({ url, frameName }) => {
+    if (isCanaryMailProtocol(url)) {
+      void requestEmlOpen(contents)
+      return { action: 'deny' }
+    }
     if (isSameOriginAppUrl(url)) {
       const href = resolveAppUrl(url).href
       const name = frameName && frameName !== '_blank' ? frameName : ''
@@ -912,11 +1305,40 @@ ipcMain.handle('canary:open-settings', async () => {
   return { ok: true }
 })
 
+ipcMain.handle('canary:webauthn-ceremony', async (event, payload) => {
+  if (webauthnBusy) {
+    return {
+      ok: false,
+      name: 'NotAllowedError',
+      message: 'A security key request is already in progress.',
+    }
+  }
+  webauthnBusy = true
+  try {
+    return await performWebAuthn(event.sender, payload)
+  } catch (err) {
+    return {
+      ok: false,
+      name: 'NotAllowedError',
+      message: err && err.message ? err.message : 'The security key request failed.',
+    }
+  } finally {
+    webauthnBusy = false
+  }
+})
+
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 } else {
   app.on('second-instance', (_event, argv) => {
+    if ((argv || []).some(isCanaryMailProtocol)) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        focusWindow(mainWindow)
+        void requestEmlOpen(mainWindow.webContents)
+      }
+      return
+    }
     const link = parseDeepLink(argv)
     if (mainWindow) {
       focusWindow(mainWindow)
@@ -942,7 +1364,7 @@ if (!gotLock) {
     fs.mkdirSync(logsDir(), { recursive: true })
     applySessionPrefs()
     applyAutostart()
-    app.setAsDefaultProtocolClient('canary')
+    registerMailProtocols()
 
     buildMenu()
     buildTray()

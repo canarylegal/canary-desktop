@@ -7,5 +7,5 @@ Icon=canary
 StartupWMClass=Canary
 Comment=Desktop application for Canary CMS
 Categories=Office;
-MimeType=x-scheme-handler/canary;
+MimeType=x-scheme-handler/canary;x-scheme-handler/canary-eml;x-scheme-handler/ext+canary;
 StartupNotify=true

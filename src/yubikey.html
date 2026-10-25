@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Security key</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1220;
+        --ink: #e8eef8;
+        --muted: #93a0b8;
+        --accent: #5b8def;
+        --line: rgba(255, 255, 255, 0.12);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        padding: 22px 22px 18px;
+      }
+      h1 { margin: 0 0 8px; font-size: 1.15rem; }
+      p { margin: 0 0 16px; color: var(--muted); line-height: 1.4; }
+      label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 6px; }
+      input {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: #111a2e;
+        color: var(--ink);
+        font-size: 1rem;
+      }
+      .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+      button {
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--ink);
+        border-radius: 10px;
+        padding: 8px 14px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button.primary { background: var(--accent); border-color: transparent; color: white; }
+    </style>
+  </head>
+  <body>
+    <h1>Security key</h1>
+    <p id="message"></p>
+    <form id="form">
+      <div id="pin-row">
+        <label for="pin">YubiKey PIN</label>
+        <input id="pin" type="password" autocomplete="current-password" autofocus />
+      </div>
+      <div class="row">
+        <button type="button" id="cancel">Cancel</button>
+        <button type="submit" class="primary" id="continue">Continue</button>
+      </div>
+    </form>
+    <script>
+      const params = new URLSearchParams(location.search)
+      const mode = params.get('mode') || 'touch'
+      document.getElementById('message').textContent = params.get('message') || 'Touch your YubiKey.'
+      const pinRow = document.getElementById('pin-row')
+      const cont = document.getElementById('continue')
+      if (mode !== 'pin') {
+        pinRow.hidden = true
+        cont.hidden = true
+      } else {
+        document.getElementById('pin').focus()
+      }
+      document.getElementById('cancel').addEventListener('click', () => {
+        window.canaryDesktop.cancelYubiKey()
+      })
+      document.getElementById('form').addEventListener('submit', (event) => {
+        event.preventDefault()
+        if (mode !== 'pin') return
+        const pin = document.getElementById('pin').value
+        if (!pin) return
+        window.canaryDesktop.submitYubiKey(pin)
+      })
+    </script>
+  </body>
+</html>

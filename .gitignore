@@ -14,6 +14,8 @@ node_modules/
 dist/
 out/
 *.asar
+__pycache__/
+*.pyc
 
 # OS / editor
 .DS_Store
